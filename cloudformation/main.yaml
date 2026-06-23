@@ -818,10 +818,6 @@ Outputs:
     Description: EC2 public IP for SSH (ssh -i vockey.pem ec2-user@<ip>)
     Value: !GetAtt EC2Instance.PublicIp
 
-  EC2IPv6Address:
-    Description: EC2 IPv6 address (bonus - dual-stack proof)
-    Value: !GetAtt EC2Instance.Ipv6Address
-
   RDSEndpoint:
     Description: RDS MySQL endpoint (private - only accessible from EC2)
     Value: !GetAtt RDSInstance.Endpoint.Address
