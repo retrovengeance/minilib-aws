@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS Reservations (
     userId          INT          NOT NULL,
     bookId          INT          NOT NULL,
     reservedAt      DATETIME     NOT NULL DEFAULT NOW(),
-    collectBy       DATETIME     NOT NULL DEFAULT DATE_ADD(NOW(), INTERVAL 3 DAY),
+    collectBy       DATETIME     NOT NULL DEFAULT NOW(),
     borrowDate      DATETIME     NULL,
     dueDate         DATETIME     NULL,
     returnedAt      DATETIME     NULL,
@@ -247,8 +247,8 @@ BEGIN
             SET MESSAGE_TEXT = 'You already have an active reservation for this book.';
     END IF;
 
-    INSERT INTO Reservations(userId, bookId)
-    VALUES(p_userId, p_bookId);
+    INSERT INTO Reservations(userId, bookId, collectBy)
+    VALUES(p_userId, p_bookId, DATE_ADD(NOW(), INTERVAL 3 DAY));
 
     UPDATE Books SET availableQty = availableQty - 1 WHERE bookId = p_bookId;
 
