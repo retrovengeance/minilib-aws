@@ -616,7 +616,7 @@ Resources:
           cd /opt/minilib
 
           # Clone repo (update URL to your GitHub repo)
-          git clone https://github.com/YOUR_USERNAME/minilib-aws.git .
+          git clone https://github.com/retrovengeance/minilib-aws.git .
 
           # ── Environment variables (injected by CloudFormation) ───────
           cat > /opt/minilib/.env <<ENVEOF
