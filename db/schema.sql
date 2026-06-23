@@ -381,8 +381,8 @@ DELIMITER ;
 DROP USER IF EXISTS 'lib_admin'@'%';
 DROP USER IF EXISTS 'lib_member'@'%';
 
-CREATE USER 'lib_admin'@'%'  IDENTIFIED BY 'LibAdmin@Secure2024!';
-CREATE USER 'lib_member'@'%' IDENTIFIED BY 'LibMember@Secure2024!';
+CREATE USER 'lib_admin'@'%'  IDENTIFIED BY 'LibAdminSecure2024!';
+CREATE USER 'lib_member'@'%' IDENTIFIED BY 'LibMemberSecure2024!';
 
 -- lib_admin: full control over MiniLibraryDB
 GRANT ALL PRIVILEGES ON MiniLibraryDB.* TO 'lib_admin'@'%';
