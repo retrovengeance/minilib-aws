@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
-  CCS6344 Assignment 2 — MiniLibrary Secure AWS Migration
+  CCS6344 Assignment 2 - MiniLibrary Secure AWS Migration
   Academy-compliant: us-east-1, LabRole, no Multi-AZ RDS,
   dual-stack IPv6, nginx HTTPS, RDS MySQL encrypted at rest.
 
@@ -46,7 +46,7 @@ Parameters:
       Use 0.0.0.0/0 only for testing, lock down in production
 
 # ─────────────────────────────────────────────
-#  NETWORKING — VPC, SUBNETS, GATEWAYS
+#  NETWORKING - VPC, SUBNETS, GATEWAYS
 # ─────────────────────────────────────────────
 Resources:
 
@@ -108,7 +108,7 @@ Resources:
         - Key: Name
           Value: minilib-public-a
 
-  # ── Public Subnet B (AZ: us-east-1b) — needed for ALB ────────
+  # ── Public Subnet B (AZ: us-east-1b) - needed for ALB ────────
   PublicSubnetB:
     Type: AWS::EC2::Subnet
     DependsOn: VPCIPv6CidrBlock
@@ -128,7 +128,7 @@ Resources:
         - Key: Name
           Value: minilib-public-b
 
-  # ── Private Subnet A (AZ: us-east-1a) — RDS primary ─────────
+  # ── Private Subnet A (AZ: us-east-1a) - RDS primary ─────────
   PrivateSubnetA:
     Type: AWS::EC2::Subnet
     DependsOn: VPCIPv6CidrBlock
@@ -147,7 +147,7 @@ Resources:
         - Key: Name
           Value: minilib-private-a
 
-  # ── Private Subnet B (AZ: us-east-1b) — RDS subnet group ─────
+  # ── Private Subnet B (AZ: us-east-1b) - RDS subnet group ─────
   PrivateSubnetB:
     Type: AWS::EC2::Subnet
     DependsOn: VPCIPv6CidrBlock
@@ -240,7 +240,7 @@ Resources:
   SGALB:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: ALB — accept HTTP:80 and HTTPS:443 from internet
+      GroupDescription: ALB - accept HTTP:80 and HTTPS:443 from internet
       VpcId: !Ref VPC
       SecurityGroupIngress:
         # IPv4
@@ -274,7 +274,7 @@ Resources:
   SGEC2:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: EC2 — accept port 80 from ALB SG only; SSH from YourIP only
+      GroupDescription: EC2 - accept port 80 from ALB SG only; SSH from YourIP only
       VpcId: !Ref VPC
       SecurityGroupIngress:
         # HTTP from ALB SG only (nginx reverse proxy)
@@ -282,7 +282,7 @@ Resources:
           FromPort: 80
           ToPort: 80
           SourceSecurityGroupId: !Ref SGALB
-        # SSH — lock to your IP
+        # SSH - lock to your IP
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
@@ -295,7 +295,7 @@ Resources:
   SGRDS:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: RDS MySQL — accept port 3306 from EC2 SG only
+      GroupDescription: RDS MySQL - accept port 3306 from EC2 SG only
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -458,7 +458,7 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub 'minilib-backups-${AWS::AccountId}'
-      # Encryption at rest — AES-256 (SSE-S3, no KMS key needed)
+      # Encryption at rest - AES-256 (SSE-S3, no KMS key needed)
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
@@ -507,16 +507,16 @@ Resources:
       EngineVersion: '8.0'
       MasterUsername: !Ref DBUsername
       MasterUserPassword: !Ref DBPassword
-      AllocatedStorage: '20'             # GB — well under 100 GB limit
+      AllocatedStorage: '20'             # GB - well under 100 GB limit
       StorageType: gp2
       # Encryption at rest using default aws/rds KMS key (list-only KMS access is fine)
       StorageEncrypted: true
-      # NO Multi-AZ — Academy restriction
+      # NO Multi-AZ - Academy restriction
       MultiAZ: false
       DBSubnetGroupName: !Ref DBSubnetGroup
       VPCSecurityGroups:
         - !Ref SGRDS
-      PubliclyAccessible: false          # Private subnet — never public
+      PubliclyAccessible: false          # Private subnet - never public
       BackupRetentionPeriod: 7           # 7-day automated backups
       DeletionProtection: false          # Academy: allow stack deletion
       # Academy requirement: disable enhanced monitoring
@@ -562,7 +562,7 @@ Resources:
         - Key: Name
           Value: minilib-tg
 
-  # HTTP listener — redirects to HTTPS (self-signed cert served by nginx on EC2)
+  # HTTP listener - redirects to HTTPS (self-signed cert served by nginx on EC2)
   ALBListenerHTTP:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
@@ -593,7 +593,7 @@ Resources:
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
           Ebs:
-            VolumeSize: 20    # GB — well under 35 GB limit
+            VolumeSize: 20    # GB - well under 35 GB limit
             VolumeType: gp2
             Encrypted: true   # Encrypt root EBS volume
       Tags:
@@ -616,7 +616,7 @@ Resources:
           cd /opt/minilib
 
           # Clone repo (update URL to your GitHub repo)
-          git clone https://github.com/retrovengeance/minilib-aws.git .
+          git clone https://github.com/YOUR_USERNAME/minilib-aws.git .
 
           # ── Environment variables (injected by CloudFormation) ───────
           cat > /opt/minilib/.env <<ENVEOF
@@ -691,7 +691,7 @@ Resources:
           # ── Start Flask app ──────────────────────────────────────────
           source /opt/minilib/.env
 
-          # Run Flask (or Docker — see docker section)
+          # Run Flask (or Docker - see docker section)
           nohup python3 /opt/minilib/app.py > /var/log/minilib-flask.log 2>&1 &
 
           # ── Start and enable nginx ───────────────────────────────────
@@ -701,19 +701,8 @@ Resources:
           # ── Schedule hourly S3 backup ────────────────────────────────
           echo "0 * * * * source /opt/minilib/.env && python3 /opt/minilib/scripts/backup_to_s3.py >> /var/log/minilib-backup.log 2>&1" | crontab -
 
-          echo "UserData complete — MiniLibrary deployed."
+          echo "UserData complete - MiniLibrary deployed."
 
-# ─────────────────────────────────────────────
-#  REGISTER EC2 IN ALB TARGET GROUP
-# ─────────────────────────────────────────────
-
-  EC2TargetGroupAttachment:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroupAttachment
-    # Note: CloudFormation doesn't have a native TG attachment resource.
-    # Register the instance in the target group via a Lambda custom resource
-    # OR register manually in the console after stack creation.
-    # For Academy simplicity, register manually:
-    # EC2 Console → Load Balancing → Target Groups → minilib-ec2-tg → Register targets
 
 # ─────────────────────────────────────────────
 #  SNS TOPIC FOR CLOUDWATCH ALARMS
@@ -737,7 +726,7 @@ Resources:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: minilib-ec2-high-cpu
-      AlarmDescription: EC2 CPU > 80% for 5 min — possible DoS or runaway process
+      AlarmDescription: EC2 CPU > 80% for 5 min - possible DoS or runaway process
       MetricName: CPUUtilization
       Namespace: AWS/EC2
       Statistic: Average
@@ -757,7 +746,7 @@ Resources:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: minilib-rds-high-connections
-      AlarmDescription: RDS connections > 50 — investigate possible connection abuse
+      AlarmDescription: RDS connections > 50 - investigate possible connection abuse
       MetricName: DatabaseConnections
       Namespace: AWS/RDS
       Statistic: Average
@@ -777,7 +766,7 @@ Resources:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: minilib-alb-5xx-errors
-      AlarmDescription: ALB 5xx errors > 10 in 5 min — possible attack or app crash
+      AlarmDescription: ALB 5xx errors > 10 in 5 min - possible attack or app crash
       MetricName: HTTPCode_Target_5XX_Count
       Namespace: AWS/ApplicationELB
       Statistic: Sum
@@ -797,7 +786,7 @@ Resources:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: minilib-rds-low-storage
-      AlarmDescription: RDS free storage < 2 GB — expand before it fills
+      AlarmDescription: RDS free storage < 2 GB - expand before it fills
       MetricName: FreeStorageSpace
       Namespace: AWS/RDS
       Statistic: Average
@@ -822,7 +811,7 @@ Outputs:
     Value: !Sub 'http://${ALB.DNSName}'
 
   ALBDNSNameHTTPS:
-    Description: Direct HTTPS (self-signed cert — browser will warn, proceed anyway)
+    Description: Direct HTTPS (self-signed cert - browser will warn, proceed anyway)
     Value: !Sub 'https://${ALB.DNSName}'
 
   EC2PublicIP:
@@ -830,11 +819,11 @@ Outputs:
     Value: !GetAtt EC2Instance.PublicIp
 
   EC2IPv6Address:
-    Description: EC2 IPv6 address (bonus — dual-stack proof)
+    Description: EC2 IPv6 address (bonus - dual-stack proof)
     Value: !GetAtt EC2Instance.Ipv6Address
 
   RDSEndpoint:
-    Description: RDS MySQL endpoint (private — only accessible from EC2)
+    Description: RDS MySQL endpoint (private - only accessible from EC2)
     Value: !GetAtt RDSInstance.Endpoint.Address
 
   BackupBucketName:
@@ -842,5 +831,5 @@ Outputs:
     Value: !Ref BackupBucket
 
   VPCIPv6CIDR:
-    Description: VPC IPv6 CIDR block (bonus — dual-stack proof)
+    Description: VPC IPv6 CIDR block (bonus - dual-stack proof)
     Value: !Select [0, !GetAtt VPC.Ipv6CidrBlocks]
