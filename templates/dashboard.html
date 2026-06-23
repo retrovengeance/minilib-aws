@@ -1,0 +1,234 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="dashboard-grid">
+
+    <div class="metric-card card-blue">
+        <div class="metric-icon"><i class="fa-solid fa-fingerprint"></i></div>
+        <div class="metric-info">
+            <h3>Isolation Mode</h3>
+            <p>Active RLS Filter</p>
+        </div>
+    </div>
+
+    <div class="metric-card card-purple">
+        <div class="metric-icon"><i class="fa-solid fa-chart-pie"></i></div>
+        <div class="metric-info">
+            <h3>Visible Records</h3>
+            <p>{{ reservations|length }} Reservation(s)</p>
+        </div>
+    </div>
+
+    <div class="metric-card card-green">
+        <div class="metric-icon"><i class="fa-solid fa-clock"></i></div>
+        <div class="metric-info">
+            <h3>Overdue</h3>
+            <p>{{ overdue_count }} Overdue Record(s)</p>
+        </div>
+    </div>
+
+    {% if session.role == 'Librarian' %}
+    <div class="metric-card card-red">
+        <div class="metric-icon"><i class="fa-solid fa-rotate-left"></i></div>
+        <div class="metric-info">
+            <h3>Pending Returns</h3>
+            <p>{{ pending_returns }} Awaiting Approval</p>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Quick Nav Links -->
+<div style="display:flex; gap:0.75rem; flex-wrap:wrap; padding: 0 1.5rem 1rem;">
+    <a href="{{ url_for('list_books') }}" class="btn btn-primary">
+        <i class="fa-solid fa-book"></i> Browse Catalogue
+    </a>
+    {% if session.role == 'Member' %}
+    <a href="{{ url_for('my_reservations') }}" class="btn btn-secondary">
+        <i class="fa-solid fa-bookmark"></i> My Reservations
+    </a>
+    {% endif %}
+    {% if session.role == 'Librarian' %}
+    <a href="{{ url_for('all_reservations') }}" class="btn btn-secondary">
+        <i class="fa-solid fa-list-check"></i> All Reservations
+    </a>
+    <a href="{{ url_for('list_members') }}" class="btn btn-secondary">
+        <i class="fa-solid fa-users"></i> Members
+    </a>
+    <a href="{{ url_for('audit_log') }}" class="btn btn-secondary">
+        <i class="fa-solid fa-scroll"></i> Audit Log
+    </a>
+    <form method="POST" action="{{ url_for('mark_overdue') }}" style="display:inline;">
+        <button class="btn btn-danger">
+            <i class="fa-solid fa-triangle-exclamation"></i> Mark Overdue
+        </button>
+    </form>
+    {% endif %}
+</div>
+
+<div class="content-split-layout">
+    <!-- Active Reservations Table -->
+    <div class="panel data-panel">
+        <div class="panel-header">
+            <h2><i class="fa-solid fa-book-bookmark"></i> Active Reservations</h2>
+            <span class="subtitle">
+                {% if session.role == 'Librarian' %}
+                All active and overdue reservations
+                {% else %}
+                Row-Level Security — you see only your own records
+                {% endif %}
+            </span>
+        </div>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        {% if session.role == 'Librarian' %}
+                        <th>Member</th>
+                        {% endif %}
+                        <th>Book Title</th>
+                        <th>Borrow Date</th>
+                        <th>Due Date</th>
+                        <th>Status</th>
+                        {% if session.role == 'Member' %}
+                        <th>Action</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if session.role == 'Librarian' %}
+                    {% set statuses = ['active', 'overdue'] %}
+                    {% else %}
+                    {% set statuses = ['active', 'overdue', 'returnRequested'] %}
+                    {% endif %}
+
+                    {% for r in reservations if r.status in (statuses) %}
+                    <tr>
+                        <td><code>#{{ r.reservationid }}</code></td>
+
+                        {% if session.role == 'Librarian' %}
+                        <td>{{ r.username }}</td>
+                        {% endif %}
+
+                        <td><strong>{{ r.title }}</strong></td>
+                        <td>
+                            <i class="fa-regular fa-calendar-days"></i>
+                            {{ r.borrowdate[:10] if r.borrowdate else '—' }}
+                        </td>
+                        <td class="{% if r.status == 'overdue' %}text-danger{% endif %}">
+                            {{ r.duedate[:10] if r.duedate else '—' }}
+                        </td>
+                        <td>
+                            <span class="badge 
+                                    {% if r.status == 'overdue' %}badge-danger
+                                    {% elif r.status == 'returnRequested' %}badge-warning
+                                    {% else %}badge-info{% endif %}">
+                                {{ r.status }}
+                            </span>
+                        </td>
+                        {% if session.role == 'Member' %}
+                        <td>
+                            {% if r.status in ('active', 'overdue') %}
+                            <form action="{{ url_for('request_return', res_id=r.reservationid) }}" method="POST"
+                                class="inline-action-form">
+                                <button type="submit" class="btn btn-danger btn-sm">
+                                    <i class="fa-solid fa-rotate-left"></i> Request Return
+                                </button>
+                            </form>
+                            {% else %}
+                            <span class="badge badge-warning">Awaiting Librarian</span>
+                            {% endif %}
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="empty-state">
+                            <i class="fa-solid fa-folder-open"></i>
+                            <p>No active reservations found.</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Librarian: Pending Returns + Mark Overdue -->
+    {% if session.role == 'Librarian' %}
+    <div class="panel action-panel">
+        <div class="panel-header">
+            <h2><i class="fa-solid fa-clock-rotate-left"></i> Pending Returns</h2>
+            <span class="subtitle">Awaiting your approval</span>
+        </div>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Member</th>
+                        <th>Book</th>
+                        <th>Approve</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in reservations if r.status == 'returnRequested' %}
+                    <tr>
+                        <td><code>#{{ r.reservationid }}</code></td>
+                        <td>{{ r.username }}</td>
+                        <td>{{ r.title }}</td>
+                        <td>
+                            <form method="POST" action="{{ url_for('approve_return', res_id=r.reservationid) }}"
+                                class="inline-action-form">
+                                <button class="btn btn-success btn-sm">
+                                    <i class="fa-solid fa-check"></i> Approve
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="4" class="empty-state">
+                            <p>No pending return requests.</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {% else %}
+    <!-- Member: Place Reservation Form -->
+    <div class="panel action-panel">
+        <div class="panel-header">
+            <h2><i class="fa-solid fa-square-plus"></i> Reserve a Book</h2>
+            <span class="subtitle">Browse catalogue then enter the Book ID below</span>
+        </div>
+
+        <form action="{{ url_for('place_reservation', book_id=0) }}" method="POST" class="interactive-form"
+            id="reserve-form"
+            onsubmit="this.action='/reserve/' + document.getElementById('book_id_input').value; return true;">
+            <div class="field-group">
+                <label for="book_id_input">Book ID</label>
+                <div class="input-icon-box">
+                    <input type="number" id="book_id_input" name="book_id" required
+                        placeholder="Enter Book ID from catalogue" min="1">
+                    <i class="fa-solid fa-book"></i>
+                </div>
+            </div>
+            <a href="{{ url_for('list_books') }}" class="btn btn-secondary btn-block" style="margin-bottom:0.75rem;">
+                <i class="fa-solid fa-magnifying-glass"></i> Browse Catalogue for IDs
+            </a>
+            <button type="submit" class="btn btn-success btn-block">
+                <span>Place Reservation</span>
+                <i class="fa-solid fa-gears"></i>
+            </button>
+        </form>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="login-viewport">
+    <div class="glass-card">
+        <div class="brand-icon"><i class="fa-solid fa-user-plus"></i></div>
+        <h2>Create Account</h2>
+        <p>Mini Library Member Registration</p>
+
+        <form method="POST" action="{{ url_for('register') }}">
+            <div class="input-wrapper">
+                <input type="text" name="username" class="modern-input" required
+                       placeholder="Username (e.g. member_john)">
+                <i class="fa-regular fa-id-badge"></i>
+            </div>
+            <div class="input-wrapper">
+                <input type="text" name="fullname" class="modern-input" required
+                       placeholder="Full Name">
+                <i class="fa-solid fa-user"></i>
+            </div>
+            <div class="input-wrapper">
+                <input type="email" name="email" class="modern-input" required
+                       placeholder="Email Address">
+                <i class="fa-solid fa-envelope"></i>
+            </div>
+            <div class="input-wrapper">
+                <input type="password" name="password" class="modern-input" required
+                       placeholder="Password (min 6 characters)">
+                <i class="fa-solid fa-lock"></i>
+            </div>
+            <div class="input-wrapper">
+                <input type="password" name="confirm" class="modern-input" required
+                       placeholder="Confirm Password">
+                <i class="fa-solid fa-lock"></i>
+            </div>
+            <button type="submit" class="submit-btn">
+                <span>Register</span>
+                <i class="fa-solid fa-arrow-right"></i>
+            </button>
+        </form>
+
+        <div class="security-notice" style="margin-top:1rem;">
+            Already have an account?
+            <a href="{{ url_for('login') }}" style="color:#7dd3fc;">Login here</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

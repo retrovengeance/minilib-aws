@@ -1,0 +1,125 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container">
+  <div class="page-header">
+    <h1><i class="fa-solid fa-scroll"></i> Audit Log</h1>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
+      <i class="fa-solid fa-arrow-left"></i> Dashboard
+    </a>
+  </div>
+  <p class="subtitle">
+    Last 200 database events — logins, logouts, and all data changes.
+  </p>
+
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Time</th>
+        <th>Username</th>
+        <th>Action</th>
+        <th>Table</th>
+        <th>Details</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for log in logs %}
+      <tr>
+        <td>{{ log.logid }}</td>
+
+        <!-- Show datetime up to seconds -->
+        <td style="white-space:nowrap; font-size:0.85em;">
+          {{ log.loggedat[:19] if log.loggedat else '—' }}
+        </td>
+
+        <td><code>{{ log.username }}</code></td>
+
+        <!-- Action badge — matches exact SP action strings -->
+        <td>
+          {% set a = log.action %}
+
+          {% if a == 'Login' %}
+          <span class="badge" style="background:#16a34a;color:#fff;">
+            ✔ Login
+          </span>
+          {% elif a == 'LoginFailed' %}
+          <span class="badge" style="background:#dc2626;color:#fff;">
+            ✘ LoginFailed
+          </span>
+          {% elif a == 'LoginBlocked' %}
+          <span class="badge" style="background:#b45309;color:#fff;">
+            ⚠ Blocked
+          </span>
+          {% elif a == 'Logout' %}
+          <span class="badge" style="background:#6366f1;color:#fff;">
+            ↩ Logout
+          </span>
+          {% elif a == 'Register' %}
+          <span class="badge" style="background:#0891b2;color:#fff;">
+            + Register
+          </span>
+
+          {% elif a == 'AddBook' %}
+          <span class="badge" style="background:#7c3aed;color:#fff;">
+            AddBook
+          </span>
+          {% elif a == 'EditBook' %}
+          <span class="badge" style="background:#7c3aed;color:#fff;">
+            EditBook
+          </span>
+          {% elif a == 'DeleteBook' %}
+          <span class="badge" style="background:#dc2626;color:#fff;">
+            DeleteBook
+          </span>
+
+          {% elif a == 'CreateReservation' %}
+          <span class="badge" style="background:#0369a1;color:#fff;">
+            CreateReservation
+          </span>
+          {% elif a == 'CancelReservation' %}
+          <span class="badge" style="background:#475569;color:#fff;">
+            CancelReservation
+          </span>
+          {% elif a == 'CollectReservation' %}
+          <span class="badge" style="background:#16a34a;color:#fff;">
+            CollectReservation
+          </span>
+          {% elif a == 'RequestReturn' %}
+          <span class="badge" style="background:#0369a1;color:#fff;">
+            RequestReturn
+          </span>
+          {% elif a == 'ApproveReturn' %}
+          <span class="badge" style="background:#16a34a;color:#fff;">
+            ApproveReturn
+          </span>
+          {% elif a == 'MarkOverdue' %}
+          <span class="badge" style="background:#92400e;color:#fff;">
+            MarkOverdue
+          </span>
+
+          {% elif a == 'ChangeMemberStatus' %}
+          <span class="badge" style="background:#475569;color:#fff;">
+            ToggleStatus
+          </span>
+          {% elif a == 'DeleteMember' %}
+          <span class="badge" style="background:#dc2626;color:#fff;">
+            DeleteMember
+          </span>
+
+          {% else %}
+          <span class="badge badge-info">{{ a }}</span>
+          {% endif %}
+        </td>
+
+        <td>{{ log.targettable }}</td>
+        <td style="font-size:0.88em;">{{ log.description }}</td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="6" class="empty">No audit entries found.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

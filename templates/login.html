@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="login-viewport">
+    <div class="glass-card">
+        <div class="brand-icon">
+            <i class="fa-solid fa-shield-halved"></i>
+        </div>
+
+        <h2>Secure Gateway</h2>
+        <p>Mini Library Membership Management System</p>
+
+        <form method="POST" action="/">
+            <div class="input-wrapper">
+                <input type="text" id="username" name="username" class="modern-input" required placeholder="Username">
+                <i class="fa-regular fa-id-badge"></i>
+            </div>
+
+            <div class="input-wrapper">
+                <input type="password" id="password" name="password" class="modern-input" required
+                    placeholder="Password">
+                <i class="fa-solid fa-lock"></i>
+            </div>
+
+            <button type="submit" class="submit-btn">
+                <span>Authenticate Session</span>
+                <i class="fa-solid fa-arrow-right"></i>
+            </button>
+
+            <div class="register-link" style="margin-top:1rem;">
+                New member?
+                <a href="{{ url_for('register') }}" style="color:#7dd3fc;">Register</a>
+            </div>
+        </form>
+
+        <div class="security-notice">
+            <i class="fa-solid fa-circle-info"></i>
+            <span>
+                <strong>Compliance Notice:</strong> This terminal maps local context states to database layer principals
+                to enforce Row-Level Security policies. Session transactions are monitored under PDPA 2010 auditing
+                standards.
+            </span>
+        </div>
+    </div>
+</div>
+{% endblock %}

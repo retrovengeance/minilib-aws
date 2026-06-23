@@ -1,0 +1,125 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1><i class="fa-solid fa-bookmark"></i> My Reservations</h1>
+        <a href="{{ url_for('list_books') }}" class="btn btn-primary">
+            <i class="fa-solid fa-plus"></i> Reserve a Book
+        </a>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Book Title</th>
+                <th>Reserved On</th>
+                <th>Collect By</th>
+                <th>Borrow Date</th>
+                <th>Due Date</th>
+                <th>Return Date</th>
+                <th>Status</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in reservations %}
+            <tr>
+                <td><code>#{{ r.reservationid }}</code></td>
+                <td><strong>{{ r.title }}</strong></td>
+
+                <!-- reservedAt -->
+                <td>{{ r.reservedat[:10] if r.reservedat else '—' }}</td>
+
+                <!-- collectBy — highlight if pending and approaching -->
+                <td class="{% if r.status == 'pending' %}text-warning{% endif %}" style="white-space: nowrap;">
+                    {{ r.collectby[:10] if r.collectby else '—' }}
+                    {% if r.status == 'pending' %}
+                    <span class="badge badge-warning">Collect Soon</span>
+                    {% endif %}
+                </td>
+
+                <!-- borrowDate -->
+                <td>{{ r.borrowdate[:10] if r.borrowdate else '—' }}</td>
+
+                <!-- dueDate -->
+                <td class="{% if r.status == 'overdue' %}text-danger{% endif %}">
+                    {{ r.duedate[:10] if r.duedate else '—' }}
+                    {% if r.status == 'overdue' %}
+                    <span class="badge badge-danger">OVERDUE</span>
+                    {% endif %}
+                </td>
+
+                <!-- returnDate -->
+                <td>{{ r.returndate[:10] if r.returndate else '—' }}</td>
+
+                <!-- Status badge -->
+                <td>
+                    {% if r.status == 'pending' %}
+                    <span class="badge badge-warning">Pending</span>
+                    {% elif r.status == 'active' %}
+                    <span class="badge badge-info">Active</span>
+                    {% elif r.status == 'overdue' %}
+                    <span class="badge badge-danger">Overdue</span>
+                    {% elif r.status == 'returnRequested' %}
+                    <span class="badge badge-warning">Awaiting Approval</span>
+                    {% elif r.status == 'returned' %}
+                    <span class="badge badge-success">Returned</span>
+                    {% elif r.status == 'cancelled' %}
+                    <span class="badge badge-secondary">Cancelled</span>
+                    {% elif r.status == 'expired' %}
+                    <span class="badge badge-secondary">Expired</span>
+                    {% else %}
+                    <span class="badge">{{ r.status }}</span>
+                    {% endif %}
+                </td>
+
+                <!-- Actions -->
+                <td>
+                    {% if r.status == 'pending' %}
+                    <!-- Cancel pending reservation -->
+                    <form method="POST" action="{{ url_for('cancel_reservation', res_id=r.reservationid) }}"
+                        class="inline-action-form" onsubmit="return confirm('Cancel this reservation?')">
+                        <button class="btn btn-secondary btn-sm">
+                            <i class="fa-solid fa-xmark"></i> Cancel
+                        </button>
+                    </form>
+
+                    {% elif r.status in ('active', 'overdue') %}
+                    <!-- Request return -->
+                    <form method="POST" action="{{ url_for('request_return', res_id=r.reservationid) }}"
+                        class="inline-action-form">
+                        <button class="btn btn-danger btn-sm">
+                            <i class="fa-solid fa-rotate-left"></i> Request Return
+                        </button>
+                    </form>
+
+                    {% elif r.status == 'returnRequested' %}
+                    <span class="badge badge-warning">
+                        <i class="fa-solid fa-clock"></i> Awaiting Librarian
+                    </span>
+
+                    {% else %}
+                    —
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="9" class="empty">
+                    No reservations found.
+                    <a href="{{ url_for('list_books') }}">Browse the catalogue</a>
+                    to reserve a book.
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div style="margin-top:1rem;">
+        <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
+            <i class="fa-solid fa-arrow-left"></i> Dashboard
+        </a>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Athena | Mini Library Secure Portal</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+  {% if session.user %}
+  <nav class="navbar">
+    <a href="{{ url_for('dashboard') }}" class="nav-logo">
+      <i class="fa-solid fa-vault"></i> ATHENA SECURE
+    </a>
+    <div style="display:flex; gap:1rem; align-items:center; flex-wrap:wrap;">
+      <a href="{{ url_for('list_books') }}" class="nav-link"><i class="fa-solid fa-book"></i> Books</a>
+      {% if session.role == 'Member' %}
+      <a href="{{ url_for('my_reservations') }}" class="nav-link"><i class="fa-solid fa-bookmark"></i> My
+        Reservations</a>
+      {% endif %}
+      {% if session.role == 'Librarian' %}
+      <a href="{{ url_for('all_reservations') }}" class="nav-link"><i class="fa-solid fa-list-check"></i> All
+        Reservations</a>
+      <a href="{{ url_for('list_members') }}" class="nav-link"><i class="fa-solid fa-users"></i> Members</a>
+      <a href="{{ url_for('audit_log') }}" class="nav-link"><i class="fa-solid fa-scroll"></i> Audit</a>
+      {% endif %}
+    </div>
+    <div class="nav-user">
+      <span class="user-display"><i class="fa-regular fa-user"></i> {{ session.user }}</span>
+      <span class="badge">{{ session.role }}</span>
+      <span class="divider">|</span>
+      <a href="{{ url_for('logout') }}" class="logout-btn"><i class="fa-solid fa-power-off"></i></a>
+    </div>
+  </nav>
+  {% endif %}
+
+  <div class="main-wrapper">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="flash-container">
+      {% for category, message in messages %}
+      <div class="alert-banner {{ category }}">
+        {% if category == 'success' %}
+        <i class="fa-solid fa-circle-check"></i>
+        {% else %}
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        {% endif %}
+        <span>{{ message }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </div>
+
+</body>
+
+</html>

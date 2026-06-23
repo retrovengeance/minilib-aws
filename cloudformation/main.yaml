@@ -1,0 +1,846 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  CCS6344 Assignment 2 — MiniLibrary Secure AWS Migration
+  Academy-compliant: us-east-1, LabRole, no Multi-AZ RDS,
+  dual-stack IPv6, nginx HTTPS, RDS MySQL encrypted at rest.
+
+# ─────────────────────────────────────────────
+#  PARAMETERS
+# ─────────────────────────────────────────────
+Parameters:
+
+  DBPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 12
+    Description: Master password for RDS MySQL (min 12 chars)
+    ConstraintDescription: Must be at least 12 characters.
+
+  DBUsername:
+    Type: String
+    Default: admin
+    Description: Master username for RDS MySQL
+
+  FlaskSecretKey:
+    Type: String
+    NoEcho: true
+    Default: changeme_use_a_long_random_string_here
+    Description: Flask session secret key
+
+  ICEncryptionKey:
+    Type: String
+    NoEcho: true
+    Default: changeme32byteskeyforFernetAES256
+    Description: 32-byte key for IC number AES encryption (Fernet)
+
+  KeyPairName:
+    Type: String
+    Default: vockey
+    Description: EC2 key pair name (Academy default is vockey)
+
+  YourIP:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: >
+      Your public IP/CIDR for SSH access e.g. 203.0.113.5/32
+      Use 0.0.0.0/0 only for testing, lock down in production
+
+# ─────────────────────────────────────────────
+#  NETWORKING — VPC, SUBNETS, GATEWAYS
+# ─────────────────────────────────────────────
+Resources:
+
+  # ── VPC (dual-stack IPv4 + IPv6) ──────────────────────────────
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: minilib-vpc
+
+  # Request Amazon-provided /56 IPv6 block for the VPC
+  VPCIPv6CidrBlock:
+    Type: AWS::EC2::VPCCidrBlock
+    Properties:
+      VpcId: !Ref VPC
+      AmazonProvidedIpv6CidrBlock: true
+
+  # ── Internet Gateway ───────────────────────────────────────────
+  IGW:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: minilib-igw
+
+  IGWAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref IGW
+
+  # ── Egress-Only IGW (IPv6 private outbound) ───────────────────
+  EgressOnlyIGW:
+    Type: AWS::EC2::EgressOnlyInternetGateway
+    Properties:
+      VpcId: !Ref VPC
+
+  # ── Public Subnet A (AZ: us-east-1a) ─────────────────────────
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    DependsOn: VPCIPv6CidrBlock
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: us-east-1a
+      MapPublicIpOnLaunch: true
+      AssignIpv6AddressOnCreation: true
+      Ipv6CidrBlock: !Select
+        - 0
+        - !Cidr
+          - !Select [0, !GetAtt VPC.Ipv6CidrBlocks]
+          - 256
+          - 64
+      Tags:
+        - Key: Name
+          Value: minilib-public-a
+
+  # ── Public Subnet B (AZ: us-east-1b) — needed for ALB ────────
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    DependsOn: VPCIPv6CidrBlock
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: us-east-1b
+      MapPublicIpOnLaunch: true
+      AssignIpv6AddressOnCreation: true
+      Ipv6CidrBlock: !Select
+        - 1
+        - !Cidr
+          - !Select [0, !GetAtt VPC.Ipv6CidrBlocks]
+          - 256
+          - 64
+      Tags:
+        - Key: Name
+          Value: minilib-public-b
+
+  # ── Private Subnet A (AZ: us-east-1a) — RDS primary ─────────
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    DependsOn: VPCIPv6CidrBlock
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: us-east-1a
+      AssignIpv6AddressOnCreation: true
+      Ipv6CidrBlock: !Select
+        - 2
+        - !Cidr
+          - !Select [0, !GetAtt VPC.Ipv6CidrBlocks]
+          - 256
+          - 64
+      Tags:
+        - Key: Name
+          Value: minilib-private-a
+
+  # ── Private Subnet B (AZ: us-east-1b) — RDS subnet group ─────
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    DependsOn: VPCIPv6CidrBlock
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.4.0/24
+      AvailabilityZone: us-east-1b
+      AssignIpv6AddressOnCreation: true
+      Ipv6CidrBlock: !Select
+        - 3
+        - !Cidr
+          - !Select [0, !GetAtt VPC.Ipv6CidrBlocks]
+          - 256
+          - 64
+      Tags:
+        - Key: Name
+          Value: minilib-private-b
+
+  # ── Route Tables ───────────────────────────────────────────────
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: minilib-public-rt
+
+  # IPv4 default route → IGW
+  PublicIPv4Route:
+    Type: AWS::EC2::Route
+    DependsOn: IGWAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref IGW
+
+  # IPv6 default route → IGW (public subnets get real IPv6)
+  PublicIPv6Route:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationIpv6CidrBlock: '::/0'
+      GatewayId: !Ref IGW
+
+  PublicSubnetARouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetBRouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: minilib-private-rt
+
+  # IPv6 egress for private subnets → EIGW (no inbound)
+  PrivateIPv6EgressRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationIpv6CidrBlock: '::/0'
+      EgressOnlyInternetGatewayId: !Ref EgressOnlyIGW
+
+  PrivateSubnetARouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetA
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnetBRouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetB
+      RouteTableId: !Ref PrivateRouteTable
+
+# ─────────────────────────────────────────────
+#  SECURITY GROUPS
+# ─────────────────────────────────────────────
+
+  # ── ALB Security Group ────────────────────────────────────────
+  SGALB:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ALB — accept HTTP:80 and HTTPS:443 from internet
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        # IPv4
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        # IPv6
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIpv6: '::/0'
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIpv6: '::/0'
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: minilib-sg-alb
+
+  # ── EC2 Security Group ────────────────────────────────────────
+  SGEC2:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: EC2 — accept port 80 from ALB SG only; SSH from YourIP only
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        # HTTP from ALB SG only (nginx reverse proxy)
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref SGALB
+        # SSH — lock to your IP
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref YourIP
+      Tags:
+        - Key: Name
+          Value: minilib-sg-ec2
+
+  # ── RDS Security Group ────────────────────────────────────────
+  SGRDS:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: RDS MySQL — accept port 3306 from EC2 SG only
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref SGEC2
+      Tags:
+        - Key: Name
+          Value: minilib-sg-rds
+
+# ─────────────────────────────────────────────
+#  NETWORK ACLs (stateless, subnet-level)
+# ─────────────────────────────────────────────
+
+  PublicNACL:
+    Type: AWS::EC2::NetworkAcl
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: minilib-nacl-public
+
+  # Inbound: allow HTTP, HTTPS, SSH, and ephemeral return traffic
+  PublicNACLInHTTP:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PublicNACL
+      RuleNumber: 100
+      Protocol: 6
+      RuleAction: allow
+      Egress: false
+      CidrBlock: 0.0.0.0/0
+      PortRange: { From: 80, To: 80 }
+
+  PublicNACLInHTTPS:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PublicNACL
+      RuleNumber: 110
+      Protocol: 6
+      RuleAction: allow
+      Egress: false
+      CidrBlock: 0.0.0.0/0
+      PortRange: { From: 443, To: 443 }
+
+  PublicNACLInSSH:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PublicNACL
+      RuleNumber: 120
+      Protocol: 6
+      RuleAction: allow
+      Egress: false
+      CidrBlock: 0.0.0.0/0
+      PortRange: { From: 22, To: 22 }
+
+  PublicNACLInEphemeral:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PublicNACL
+      RuleNumber: 130
+      Protocol: 6
+      RuleAction: allow
+      Egress: false
+      CidrBlock: 0.0.0.0/0
+      PortRange: { From: 1024, To: 65535 }
+
+  # Outbound: allow all (Security Groups handle fine-grained egress)
+  PublicNACLOut:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PublicNACL
+      RuleNumber: 100
+      Protocol: -1
+      RuleAction: allow
+      Egress: true
+      CidrBlock: 0.0.0.0/0
+
+  PublicNACLAssocA:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      NetworkAclId: !Ref PublicNACL
+
+  PublicNACLAssocB:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      NetworkAclId: !Ref PublicNACL
+
+  PrivateNACL:
+    Type: AWS::EC2::NetworkAcl
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: minilib-nacl-private
+
+  # Inbound: allow MySQL from app subnet only
+  PrivateNACLInMySQL:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PrivateNACL
+      RuleNumber: 100
+      Protocol: 6
+      RuleAction: allow
+      Egress: false
+      CidrBlock: 10.0.1.0/24
+      PortRange: { From: 3306, To: 3306 }
+
+  PrivateNACLInMySQLB:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PrivateNACL
+      RuleNumber: 110
+      Protocol: 6
+      RuleAction: allow
+      Egress: false
+      CidrBlock: 10.0.2.0/24
+      PortRange: { From: 3306, To: 3306 }
+
+  PrivateNACLInEphemeral:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PrivateNACL
+      RuleNumber: 120
+      Protocol: 6
+      RuleAction: allow
+      Egress: false
+      CidrBlock: 0.0.0.0/0
+      PortRange: { From: 1024, To: 65535 }
+
+  PrivateNACLOut:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PrivateNACL
+      RuleNumber: 100
+      Protocol: -1
+      RuleAction: allow
+      Egress: true
+      CidrBlock: 0.0.0.0/0
+
+  PrivateNACLAssocA:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetA
+      NetworkAclId: !Ref PrivateNACL
+
+  PrivateNACLAssocB:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetB
+      NetworkAclId: !Ref PrivateNACL
+
+# ─────────────────────────────────────────────
+#  S3 BACKUP BUCKET
+# ─────────────────────────────────────────────
+
+  BackupBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'minilib-backups-${AWS::AccountId}'
+      # Encryption at rest — AES-256 (SSE-S3, no KMS key needed)
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      # Block all public access
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      # Keep backups for 30 days then delete
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldBackups
+            Status: Enabled
+            ExpirationInDays: 30
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Name
+          Value: minilib-backup-bucket
+
+# ─────────────────────────────────────────────
+#  RDS MYSQL
+# ─────────────────────────────────────────────
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Private subnets for MiniLibrary RDS
+      SubnetIds:
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetB
+      Tags:
+        - Key: Name
+          Value: minilib-db-subnet-group
+
+  RDSInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete   # Academy: allow clean teardown
+    Properties:
+      DBInstanceIdentifier: minilibrarydb
+      DBName: MiniLibraryDB
+      DBInstanceClass: db.t3.micro       # Cheapest Academy-supported class
+      Engine: mysql
+      EngineVersion: '8.0'
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      AllocatedStorage: '20'             # GB — well under 100 GB limit
+      StorageType: gp2
+      # Encryption at rest using default aws/rds KMS key (list-only KMS access is fine)
+      StorageEncrypted: true
+      # NO Multi-AZ — Academy restriction
+      MultiAZ: false
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref SGRDS
+      PubliclyAccessible: false          # Private subnet — never public
+      BackupRetentionPeriod: 7           # 7-day automated backups
+      DeletionProtection: false          # Academy: allow stack deletion
+      # Academy requirement: disable enhanced monitoring
+      MonitoringInterval: 0
+      Tags:
+        - Key: Name
+          Value: minilib-rds
+
+# ─────────────────────────────────────────────
+#  APPLICATION LOAD BALANCER
+# ─────────────────────────────────────────────
+
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: minilib-alb
+      Type: application
+      Scheme: internet-facing
+      IpAddressType: dualstack          # IPv4 + IPv6
+      Subnets:
+        - !Ref PublicSubnetA
+        - !Ref PublicSubnetB
+      SecurityGroups:
+        - !Ref SGALB
+      Tags:
+        - Key: Name
+          Value: minilib-alb
+
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: minilib-ec2-tg
+      Protocol: HTTP
+      Port: 80
+      VpcId: !Ref VPC
+      TargetType: instance
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Tags:
+        - Key: Name
+          Value: minilib-tg
+
+  # HTTP listener — redirects to HTTPS (self-signed cert served by nginx on EC2)
+  ALBListenerHTTP:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+
+# ─────────────────────────────────────────────
+#  EC2 INSTANCE
+# ─────────────────────────────────────────────
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - RDSInstance
+      - BackupBucket
+    Properties:
+      ImageId: ami-0c02fb55956c7d316    # Amazon Linux 2023 (us-east-1)
+      InstanceType: t3.micro
+      KeyName: !Ref KeyPairName
+      IamInstanceProfile: LabInstanceProfile   # Academy pre-created profile
+      SubnetId: !Ref PublicSubnetA
+      SecurityGroupIds:
+        - !Ref SGEC2
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 20    # GB — well under 35 GB limit
+            VolumeType: gp2
+            Encrypted: true   # Encrypt root EBS volume
+      Tags:
+        - Key: Name
+          Value: minilib-ec2
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          exec > >(tee /var/log/user-data.log | logger -t user-data) 2>&1
+
+          # ── System packages ──────────────────────────────────────────
+          dnf update -y
+          dnf install -y python3 python3-pip nginx git openssl
+
+          # ── Python dependencies ──────────────────────────────────────
+          pip3 install flask pymysql bcrypt cryptography boto3 flask-limiter
+
+          # ── App directory ────────────────────────────────────────────
+          mkdir -p /opt/minilib
+          cd /opt/minilib
+
+          # Clone repo (update URL to your GitHub repo)
+          git clone https://github.com/YOUR_USERNAME/minilib-aws.git .
+
+          # ── Environment variables (injected by CloudFormation) ───────
+          cat > /opt/minilib/.env <<ENVEOF
+          export DB_HOST="${RDSInstance.Endpoint.Address}"
+          export DB_PORT="3306"
+          export DB_NAME="MiniLibraryDB"
+          export DB_USER="${DBUsername}"
+          export DB_PASSWORD="${DBPassword}"
+          export FLASK_SECRET_KEY="${FlaskSecretKey}"
+          export IC_ENCRYPTION_KEY="${ICEncryptionKey}"
+          export BACKUP_BUCKET="${BackupBucket}"
+          export AWS_DEFAULT_REGION="us-east-1"
+          ENVEOF
+
+          chmod 600 /opt/minilib/.env
+          source /opt/minilib/.env
+
+          # ── Self-signed SSL certificate for nginx ────────────────────
+          mkdir -p /etc/nginx/ssl
+          openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+            -keyout /etc/nginx/ssl/minilib.key \
+            -out    /etc/nginx/ssl/minilib.crt \
+            -subj "/C=MY/ST=Selangor/L=Cyberjaya/O=MMU/OU=CCS6344/CN=minilib-app"
+
+          # ── nginx configuration ──────────────────────────────────────
+          cat > /etc/nginx/conf.d/minilib.conf <<'NGINXEOF'
+          server {
+              listen 80;
+              server_name _;
+
+              # Health check endpoint for ALB (no redirect needed)
+              location /health {
+                  proxy_pass http://127.0.0.1:5000/health;
+                  proxy_set_header Host $host;
+              }
+
+              # Redirect all other HTTP to HTTPS
+              location / {
+                  return 301 https://$host$request_uri;
+              }
+          }
+
+          server {
+              listen 443 ssl;
+              server_name _;
+
+              ssl_certificate     /etc/nginx/ssl/minilib.crt;
+              ssl_certificate_key /etc/nginx/ssl/minilib.key;
+              ssl_protocols       TLSv1.2 TLSv1.3;
+              ssl_ciphers         HIGH:!aNULL:!MD5;
+
+              # Security headers
+              add_header X-Frame-Options DENY;
+              add_header X-Content-Type-Options nosniff;
+              add_header X-XSS-Protection "1; mode=block";
+              add_header Strict-Transport-Security "max-age=31536000" always;
+
+              location / {
+                  proxy_pass         http://127.0.0.1:5000;
+                  proxy_set_header   Host $host;
+                  proxy_set_header   X-Real-IP $remote_addr;
+                  proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header   X-Forwarded-Proto https;
+                  proxy_read_timeout 60s;
+              }
+          }
+          NGINXEOF
+
+          # Remove default nginx config
+          rm -f /etc/nginx/conf.d/default.conf
+
+          # ── Start Flask app ──────────────────────────────────────────
+          source /opt/minilib/.env
+
+          # Run Flask (or Docker — see docker section)
+          nohup python3 /opt/minilib/app.py > /var/log/minilib-flask.log 2>&1 &
+
+          # ── Start and enable nginx ───────────────────────────────────
+          systemctl enable nginx
+          systemctl start nginx
+
+          # ── Schedule hourly S3 backup ────────────────────────────────
+          echo "0 * * * * source /opt/minilib/.env && python3 /opt/minilib/scripts/backup_to_s3.py >> /var/log/minilib-backup.log 2>&1" | crontab -
+
+          echo "UserData complete — MiniLibrary deployed."
+
+# ─────────────────────────────────────────────
+#  REGISTER EC2 IN ALB TARGET GROUP
+# ─────────────────────────────────────────────
+
+  EC2TargetGroupAttachment:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroupAttachment
+    # Note: CloudFormation doesn't have a native TG attachment resource.
+    # Register the instance in the target group via a Lambda custom resource
+    # OR register manually in the console after stack creation.
+    # For Academy simplicity, register manually:
+    # EC2 Console → Load Balancing → Target Groups → minilib-ec2-tg → Register targets
+
+# ─────────────────────────────────────────────
+#  SNS TOPIC FOR CLOUDWATCH ALARMS
+# ─────────────────────────────────────────────
+
+  AlarmSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: minilib-security-alarms
+      # Add your email subscription here (or subscribe via console after stack creation)
+      # Subscription:
+      #   - Endpoint: youremail@example.com
+      #     Protocol: email
+
+# ─────────────────────────────────────────────
+#  CLOUDWATCH ALARMS
+# ─────────────────────────────────────────────
+
+  # Alarm: High EC2 CPU (possible brute force / DoS)
+  EC2CPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: minilib-ec2-high-cpu
+      AlarmDescription: EC2 CPU > 80% for 5 min — possible DoS or runaway process
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref EC2Instance
+      AlarmActions:
+        - !Ref AlarmSNSTopic
+      TreatMissingData: notBreaching
+
+  # Alarm: RDS high connections (possible connection flood)
+  RDSConnectionsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: minilib-rds-high-connections
+      AlarmDescription: RDS connections > 50 — investigate possible connection abuse
+      MetricName: DatabaseConnections
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 50
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref RDSInstance
+      AlarmActions:
+        - !Ref AlarmSNSTopic
+      TreatMissingData: notBreaching
+
+  # Alarm: ALB 5xx errors (app errors or attacks causing failures)
+  ALB5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: minilib-alb-5xx-errors
+      AlarmDescription: ALB 5xx errors > 10 in 5 min — possible attack or app crash
+      MetricName: HTTPCode_Target_5XX_Count
+      Namespace: AWS/ApplicationELB
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt ALB.LoadBalancerFullName
+      AlarmActions:
+        - !Ref AlarmSNSTopic
+      TreatMissingData: notBreaching
+
+  # Alarm: RDS storage running low
+  RDSStorageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: minilib-rds-low-storage
+      AlarmDescription: RDS free storage < 2 GB — expand before it fills
+      MetricName: FreeStorageSpace
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 2000000000   # 2 GB in bytes
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref RDSInstance
+      AlarmActions:
+        - !Ref AlarmSNSTopic
+      TreatMissingData: notBreaching
+
+# ─────────────────────────────────────────────
+#  OUTPUTS
+# ─────────────────────────────────────────────
+Outputs:
+
+  ALBDNSName:
+    Description: Access the app at this URL (HTTP:80 redirects to HTTPS via nginx)
+    Value: !Sub 'http://${ALB.DNSName}'
+
+  ALBDNSNameHTTPS:
+    Description: Direct HTTPS (self-signed cert — browser will warn, proceed anyway)
+    Value: !Sub 'https://${ALB.DNSName}'
+
+  EC2PublicIP:
+    Description: EC2 public IP for SSH (ssh -i vockey.pem ec2-user@<ip>)
+    Value: !GetAtt EC2Instance.PublicIp
+
+  EC2IPv6Address:
+    Description: EC2 IPv6 address (bonus — dual-stack proof)
+    Value: !GetAtt EC2Instance.Ipv6Address
+
+  RDSEndpoint:
+    Description: RDS MySQL endpoint (private — only accessible from EC2)
+    Value: !GetAtt RDSInstance.Endpoint.Address
+
+  BackupBucketName:
+    Description: S3 bucket for database backups
+    Value: !Ref BackupBucket
+
+  VPCIPv6CIDR:
+    Description: VPC IPv6 CIDR block (bonus — dual-stack proof)
+    Value: !Select [0, !GetAtt VPC.Ipv6CidrBlocks]

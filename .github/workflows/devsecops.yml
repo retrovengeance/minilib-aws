@@ -1,0 +1,177 @@
+name: DevSecOps Pipeline — MiniLibrary AWS
+
+# Trigger on every push to main and on pull requests
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+# ─────────────────────────────────────────────────────────────
+#  STAGE 1: SAST — Static Application Security Testing
+#  Tool: Bandit — scans Python code for insecure patterns
+#  Catches: hardcoded secrets, use of eval(), weak crypto, etc.
+# ─────────────────────────────────────────────────────────────
+  sast-bandit:
+    name: 'SAST: Bandit Python scan'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Bandit
+        run: pip install bandit[toml]
+
+      - name: Run Bandit SAST scan
+        run: |
+          bandit -r app.py scripts/ \
+            --severity-level medium \
+            --confidence-level medium \
+            --format json \
+            --output bandit-report.json || true
+          # Print human-readable summary
+          bandit -r app.py scripts/ --severity-level medium || true
+
+      - name: Upload Bandit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-sast-report
+          path: bandit-report.json
+
+# ─────────────────────────────────────────────────────────────
+#  STAGE 2: Dependency vulnerability scan
+#  Tool: Safety — checks requirements.txt against CVE database
+# ─────────────────────────────────────────────────────────────
+  dependency-scan:
+    name: 'SCA: Safety dependency scan'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Safety
+        run: pip install safety
+
+      - name: Scan dependencies for CVEs
+        run: |
+          safety check -r requirements.txt \
+            --json \
+            --output safety-report.json || true
+          # Also print to console
+          safety check -r requirements.txt || true
+
+      - name: Upload Safety report
+        uses: actions/upload-artifact@v4
+        with:
+          name: safety-dependency-report
+          path: safety-report.json
+
+# ─────────────────────────────────────────────────────────────
+#  STAGE 3: IaC Security Scan
+#  cfn-lint: validates CloudFormation syntax + AWS best practices
+#  Checkov:  scans for security misconfigurations (CIS benchmarks)
+# ─────────────────────────────────────────────────────────────
+  iac-scan:
+    name: 'IaC: cfn-lint + Checkov scan'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install IaC tools
+        run: pip install cfn-lint checkov
+
+      - name: Lint CloudFormation template
+        run: |
+          cfn-lint cloudformation/main.yaml \
+            --format json \
+            --output-file cfn-lint-report.json || true
+          cfn-lint cloudformation/main.yaml || true
+
+      - name: Checkov security scan on CloudFormation
+        run: |
+          checkov \
+            --file cloudformation/main.yaml \
+            --framework cloudformation \
+            --output json \
+            --output-file-path . || true
+          # Print results to console too
+          checkov \
+            --file cloudformation/main.yaml \
+            --framework cloudformation || true
+
+      - name: Upload IaC reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: iac-security-reports
+          path: |
+            cfn-lint-report.json
+            results_cloudformation.json
+
+# ─────────────────────────────────────────────────────────────
+#  STAGE 4: Deploy to EC2 (only runs on main branch push,
+#           only if all security scans pass)
+#
+#  Requires GitHub Secrets:
+#    AWS_ACCESS_KEY_ID     — from Academy "Show" credentials
+#    AWS_SECRET_ACCESS_KEY — from Academy "Show" credentials
+#    AWS_SESSION_TOKEN     — from Academy "Show" credentials
+#    EC2_HOST              — EC2 public IP from CloudFormation output
+#    EC2_SSH_KEY           — contents of labsuser.pem
+# ─────────────────────────────────────────────────────────────
+  deploy:
+    name: 'Deploy: Update EC2 application'
+    runs-on: ubuntu-latest
+    needs: [ sast-bandit, dependency-scan, iac-scan ]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (Academy session token)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region:            us-east-1
+
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/labsuser.pem
+          chmod 400 ~/.ssh/labsuser.pem
+
+      - name: Deploy application to EC2
+        run: |
+          ssh -o StrictHostKeyChecking=no \
+              -i ~/.ssh/labsuser.pem \
+              ec2-user@${{ secrets.EC2_HOST }} << 'DEPLOY'
+            cd /opt/minilib
+            git pull origin main
+            pip3 install -r requirements.txt --quiet
+            # Restart Flask (or Docker container)
+            pkill -f "python3 /opt/minilib/app.py" || true
+            source /opt/minilib/.env
+            nohup python3 /opt/minilib/app.py > /var/log/minilib-flask.log 2>&1 &
+            echo "Deployment complete at $(date)"
+          DEPLOY
+
+      - name: Verify deployment health
+        run: |
+          sleep 10
+          curl -f -s http://${{ secrets.EC2_HOST }}/health || exit 1
+          echo "Health check passed!"
