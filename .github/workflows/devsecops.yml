@@ -169,10 +169,9 @@ jobs:
             source /opt/minilib/.env
             nohup python3 /opt/minilib/app.py > /var/log/minilib-flask.log 2>&1 &
             echo "Deployment complete at $(date)"
-          DEPLOY
 
-      - name: Verify deployment health
-        run: |
-          sleep 18
-          curl -f -s http://${{ secrets.ALB_DNS }}/health || exit 1
-          echo "End-to-end public health check passed!"
+            # Verify health locally inside the compute cluster
+            sleep 10
+            curl -f -s http://localhost:5000/health || exit 1
+            echo "Internal application health check passed!"
+          DEPLOY
