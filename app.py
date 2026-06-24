@@ -125,7 +125,16 @@ def normalize(rows):
     """
     if rows is None:
         return []
-    return [{k.lower(): v for k, v in row.items()} for row in rows]
+    result = []
+    for row in rows:
+        new_row = {}
+        for k, v in row.items():
+            if isinstance(v, (dt.datetime, dt.date)):
+                new_row[k.lower()] = str(v)
+            else:
+                new_row[k.lower()] = v
+        result.append(new_row)
+    return result
 
 def remap_statuses(rows):
     """
