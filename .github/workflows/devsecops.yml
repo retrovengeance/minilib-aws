@@ -174,5 +174,5 @@ jobs:
       - name: Verify deployment health
         run: |
           sleep 18
-          curl -f -k -s https://${{ secrets.ALB_DNS }}/health || exit 1
+          curl -f -s http://${{ secrets.ALB_DNS }}/health || exit 1
           echo "End-to-end public health check passed!"
