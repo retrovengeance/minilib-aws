@@ -158,20 +158,30 @@ jobs:
 
       - name: Deploy application to EC2
         run: |
-          ssh -o StrictHostKeyChecking=no \
-              -i ~/.ssh/labsuser.pem \
-              ec2-user@${{ secrets.EC2_HOST }} << 'DEPLOY'
-            cd /opt/minilib
-            git pull origin main
-            pip3 install -r requirements.txt --quiet
-            # Restart Flask (or Docker container)
-            pkill -f "python3 /opt/minilib/app.py" || true
-            source /opt/minilib/.env
-            nohup python3 /opt/minilib/app.py > /var/log/minilib-flask.log 2>&1 &
-            echo "Deployment complete at $(date)"
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/labsuser.pem ec2-user@${{ secrets.EC2_HOST }} bash << 'EOF'
+set -e
+cd /opt/minilib
+sudo git pull origin main
+sudo pip3 install -r requirements.txt --quiet
 
-            # Verify health locally inside the compute cluster
-            sleep 10
-            curl -f -s http://localhost:5000/health || exit 1
-            echo "Internal application health check passed!"
-          DEPLOY
+# Stop whichever is running — Docker or direct Flask
+docker stop minilib 2>/dev/null && docker rm minilib 2>/dev/null || true
+sudo pkill -f "python3 /opt/minilib/app.py" || true
+sleep 3
+
+# Rebuild and restart Docker container
+docker build -t minilib:latest -f docker/Dockerfile .
+grep "export " /opt/minilib/.env | sed 's/^[[:space:]]*export //' | sed 's/"//g' > ~/docker_clean.env
+docker run -d --name minilib --env-file ~/docker_clean.env -p 5000:5000 --restart unless-stopped minilib:latest
+sleep 15
+
+# Health check inside EC2
+curl -f -s http://localhost:5000/health
+echo "Deploy complete"
+EOF
+
+      - name: Verify deployment health
+        run: |
+          sleep 18
+          curl -f -s http://${{ secrets.ALB_DNS }}/health || exit 1
+          echo "End-to-end public health check passed!"
