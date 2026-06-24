@@ -178,7 +178,7 @@ jobs:
           # Health check inside EC2
           curl -f -s http://localhost:5000/health
           echo "Deploy complete"
-          SEOF
+          EOF
 
       - name: Verify deployment health
         run: |
