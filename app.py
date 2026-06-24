@@ -127,6 +127,16 @@ def normalize(rows):
         return []
     return [{k.lower(): v for k, v in row.items()} for row in rows]
 
+def remap_statuses(rows):
+    """
+    Remap DB internal status 'reserved' to 'pending' for template display.
+    Templates use 'pending' to mean 'reserved but not yet collected'.
+    """
+    for r in rows:
+        if r.get('status') == 'reserved':
+            r['status'] = 'pending'
+    return rows
+
 def callproc(cursor, proc_name, args=()):
     cursor.callproc(proc_name, args)
     rows = cursor.fetchall()
@@ -334,6 +344,7 @@ def dashboard():
     finally:
         conn.close()
 
+    rows = remap_statuses(rows)
     return render_template('dashboard.html',
                            reservations=rows,
                            overdue_count=overdue_count,
@@ -354,7 +365,7 @@ def my_reservations():
         rows = []
     finally:
         conn.close()
-    return render_template('my_reservations.html', reservations=rows)
+    return render_template('my_reservations.html', reservations=remap_statuses(rows))
 
 # ─────────────────────────────────────────────
 #  ALL RESERVATIONS (Librarian view)
@@ -368,6 +379,7 @@ def all_reservations():
     try:
         with conn.cursor() as cur:
             rows = callproc(cur, 'sp_getAllReservations', ())
+        # Filter BEFORE remapping so we can still match 'reserved'
         if status == 'pending':
             rows = [r for r in rows if r['status'] == 'reserved']
         elif status:
@@ -377,7 +389,7 @@ def all_reservations():
         rows = []
     finally:
         conn.close()
-    return render_template('all_reservations.html', reservations=rows, status=status)
+    return render_template('all_reservations.html', reservations=remap_statuses(rows), status_filter=status)
 
 # ─────────────────────────────────────────────
 #  BOOKS
@@ -473,6 +485,13 @@ def place_reservation(book_id):
     finally:
         conn.close()
     return redirect(url_for('my_reservations'))
+
+
+# Alias — dashboard form JS overrides action to /reserve/<id>
+@app.route('/reserve/<int:book_id>', methods=['POST'])
+@login_required
+def reserve_book(book_id):
+    return place_reservation(book_id)
 
 
 @app.route('/cancel/<int:res_id>', methods=['POST'])
