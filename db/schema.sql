@@ -210,7 +210,7 @@ CREATE PROCEDURE sp_getAllReservations()
 BEGIN
     SELECT r.reservationId, u.fullName, u.userName, b.title, b.isbn,
            r.reservedAt, r.collectBy, r.borrowDate, r.dueDate,
-           r.returnedAt, r.status
+           r.returnedAt AS returnDate, r.status
     FROM Reservations r
     JOIN Users u ON r.userId  = u.userId
     JOIN Books b ON r.bookId  = b.bookId
@@ -222,7 +222,7 @@ CREATE PROCEDURE sp_getMemberReservations(IN p_userId INT)
 BEGIN
     SELECT r.reservationId, b.title, b.author,
            r.reservedAt, r.collectBy, r.borrowDate,
-           r.dueDate, r.returnedAt, r.status
+           r.dueDate, r.returnedAt AS returnDate, r.status
     FROM Reservations r
     JOIN Books b ON r.bookId = b.bookId
     WHERE r.userId = p_userId    -- RLS: hard-coded to caller's ID
@@ -247,8 +247,8 @@ BEGIN
             SET MESSAGE_TEXT = 'You already have an active reservation for this book.';
     END IF;
 
-    INSERT INTO Reservations(userId, bookId, collectBy)
-    VALUES(p_userId, p_bookId, DATE_ADD(NOW(), INTERVAL 3 DAY));
+    INSERT INTO Reservations(userId, bookId)
+    VALUES(p_userId, p_bookId);
 
     UPDATE Books SET availableQty = availableQty - 1 WHERE bookId = p_bookId;
 
