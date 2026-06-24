@@ -131,6 +131,7 @@ jobs:
 #    AWS_SESSION_TOKEN     — from Academy "Show" credentials
 #    EC2_HOST              — EC2 public IP from CloudFormation output
 #    EC2_SSH_KEY           — contents of labsuser.pem
+#    ALB_DNS               — ALB DNS name from CloudFormation output
 # ─────────────────────────────────────────────────────────────
   deploy:
     name: 'Deploy: Update EC2 application'
@@ -172,6 +173,6 @@ jobs:
 
       - name: Verify deployment health
         run: |
-          sleep 10
-          curl -f -s http://${{ secrets.EC2_HOST }}/health || exit 1
-          echo "Health check passed!"
+          sleep 18
+          curl -f -k -s https://${{ secrets.ALB_DNS }}/health || exit 1
+          echo "End-to-end public health check passed!"
