@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS Reservations (
     userId          INT          NOT NULL,
     bookId          INT          NOT NULL,
     reservedAt      DATETIME     NOT NULL DEFAULT NOW(),
-    collectBy       DATETIME     NOT NULL DEFAULT DATE_ADD(NOW(), INTERVAL 3 DAY),
+    collectBy       DATETIME     NOT NULL DEFAULT NOW(),
     borrowDate      DATETIME     NULL,
     dueDate         DATETIME     NULL,
     returnedAt      DATETIME     NULL,
@@ -210,7 +210,7 @@ CREATE PROCEDURE sp_getAllReservations()
 BEGIN
     SELECT r.reservationId, u.fullName, u.userName, b.title, b.isbn,
            r.reservedAt, r.collectBy, r.borrowDate, r.dueDate,
-           r.returnedAt, r.status
+           r.returnedAt AS returnDate, r.status
     FROM Reservations r
     JOIN Users u ON r.userId  = u.userId
     JOIN Books b ON r.bookId  = b.bookId
@@ -222,7 +222,7 @@ CREATE PROCEDURE sp_getMemberReservations(IN p_userId INT)
 BEGIN
     SELECT r.reservationId, b.title, b.author,
            r.reservedAt, r.collectBy, r.borrowDate,
-           r.dueDate, r.returnedAt, r.status
+           r.dueDate, r.returnedAt AS returnDate, r.status
     FROM Reservations r
     JOIN Books b ON r.bookId = b.bookId
     WHERE r.userId = p_userId    -- RLS: hard-coded to caller's ID
@@ -381,8 +381,8 @@ DELIMITER ;
 DROP USER IF EXISTS 'lib_admin'@'%';
 DROP USER IF EXISTS 'lib_member'@'%';
 
-CREATE USER 'lib_admin'@'%'  IDENTIFIED BY 'LibAdmin@Secure2024!';
-CREATE USER 'lib_member'@'%' IDENTIFIED BY 'LibMember@Secure2024!';
+CREATE USER 'lib_admin'@'%'  IDENTIFIED BY 'LibAdminSecure2024!';
+CREATE USER 'lib_member'@'%' IDENTIFIED BY 'LibMemberSecure2024!';
 
 -- lib_admin: full control over MiniLibraryDB
 GRANT ALL PRIVILEGES ON MiniLibraryDB.* TO 'lib_admin'@'%';
