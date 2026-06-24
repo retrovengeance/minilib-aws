@@ -10,8 +10,8 @@
 USE MiniLibraryDB;
 
 -- Update DB user passwords to match app.py
-ALTER USER 'lib_admin'@'%'  IDENTIFIED BY 'LibAdminSecure2024!';
-ALTER USER 'lib_member'@'%' IDENTIFIED BY 'LibMemberSecure2024!';
+ALTER USER 'lib_admin'@'%'  IDENTIFIED BY 'LibAdminSecure2026!';
+ALTER USER 'lib_member'@'%' IDENTIFIED BY 'LibMemberSecure2026!';
 FLUSH PRIVILEGES;
 
 -- Clear existing data (safe re-run)

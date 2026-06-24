@@ -96,11 +96,11 @@ DB_NAME = os.environ.get('DB_NAME', 'MiniLibraryDB')
 _CREDS = {
     'Librarian': {
         'user':     'lib_admin',
-        'password': 'LibAdminSecure2024!',
+        'password': 'LibAdminSecure2026!',
     },
     'Member': {
         'user':     'lib_member',
-        'password': 'LibMemberSecure2024!',
+        'password': 'LibMemberSecure2026!',
     },
 }
 
